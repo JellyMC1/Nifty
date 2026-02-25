@@ -127,51 +127,67 @@ st.sidebar.metric("S&P 500 (US)", f"{us_market['Close'].iloc[-1]:.2f}", f"{chang
 precision = st.sidebar.select_slider("Simulation Rigor", options=["Standard", "High", "Institutional"], value="Standard")
 iterations = {"Standard": 1000, "High": 5000, "Institutional": 10000}[precision]
 
-with tab3:
-    st.subheader("📊 Strategy Payoff Simulator")
-    
-    # Create a range of prices for the payoff chart
-    sT = np.linspace(strike * 0.8, strike * 1.2, 100)
-    
-    if strategy == "Long Straddle":
-        payoff = np.maximum(sT - strike, 0) + np.maximum(strike - sT, 0) - (ce_price + pe_price)
-    elif strategy == "Bull Call Spread":
-        payoff = np.maximum(sT - strike, 0) - np.maximum(sT - (strike + 100), 0) - (ce_price - 10) # 10 is dummy hedge cost
-        
-    fig_payoff = go.Figure()
-    fig_payoff.add_trace(go.Scatter(x=sT, y=payoff, name="P&L at Expiry", fill='tozeroy'))
-    fig_payoff.add_hline(y=0, line_dash="dash", line_color="red")
-    fig_payoff.update_layout(title="Expected Profit/Loss Profile", xaxis_title="Spot Price at Expiry", yaxis_title="Profit / Loss")
-    st.plotly_chart(fig_payoff, use_container_width=True)
+# --- STEP 1: Define the price range for the chart ---
+sT = np.linspace(strike * 0.85, strike * 1.15, 100)
+
+# --- STEP 2: Calculate Payoff for EVERY strategy ---
+if strategy == "Long Straddle":
+    # Buy Call + Buy Put
+    payoff = (np.maximum(sT - strike, 0) - ce_price) + (np.maximum(strike - sT, 0) - pe_price)
+
+elif strategy == "Bull Call Spread":
+    # Buy ATM Call, Sell OTM Call (assuming 100 point spread)
+    strike_high = strike + 100
+    ce_price_high = black_scholes(spot, strike_high, T, 0.07, iv, "call")
+    payoff = (np.maximum(sT - strike, 0) - ce_price) - (np.maximum(sT - strike_high, 0) - ce_price_high)
+
+elif strategy == "Iron Condor":
+    # Simplified Iron Condor Payoff
+    s1, s2, s3, s4 = strike-200, strike-100, strike+100, strike+200
+    payoff = (np.maximum(sT-s1,0) - np.maximum(sT-s2,0) - np.maximum(s3-sT,0) + np.maximum(s4-sT,0))
+
+else:
+    # DEFAULT/FALLBACK: Single Option (Call)
+    payoff = np.maximum(sT - strike, 0) - ce_price
+
+# --- STEP 3: Now the chart will always find the 'payoff' variable ---
+fig_payoff = go.Figure()
+fig_payoff.add_trace(go.Scatter(x=sT, y=payoff, name="P&L at Expiry", fill='tozeroy'))
     
 with tab2:
     st.subheader("🎲 Institutional Risk Projection")
     
-    # Advanced Monte Carlo with Confidence Intervals
-    returns = np.log(data['Close'] / data['Close'].shift(1))
-    mu, sigma_daily = returns.mean(), returns.std()
-    
-    # Run Simulation
-    sim_results = monte_carlo_sim(data['Close'].iloc[-1], n_days/252, 0.07, vol, iterations, n_days)
-    
-    # UI: Metrics for Risk
-    final_prices = sim_results[-1]
-    var_95 = np.percentile(final_prices, 5)
-    expected_val = np.mean(final_prices)
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("95% VaR (Floor)", f"₹{var_95:.2f}", help="95% certainty price won't fall below this")
-    col2.metric("Mean Projection", f"₹{expected_val:.2f}")
-    col3.metric("Volatility (σ)", f"{vol*100:.1f}%")
+    # 1. Ensure we have data to calculate volatility
+    if not data.empty:
+        # Calculate daily log returns
+        returns = np.log(data['Close'] / data['Close'].shift(1)).dropna()
+        
+        # Calculate annualized volatility
+        vol_calc = returns.std() * np.sqrt(252)
+        
+        # User inputs
+        n_sims = st.slider("Simulations", 100, 5000, 1000)
+        n_days = st.slider("Days Ahead", 5, 252, 30)
+        
+        # 2. Run the actual simulation
+        # Using .iloc[-1] to get the most recent price
+        start_price = data['Close'].iloc[-1]
+        
+        # Call the simulation function (ensure this is defined at the top of your app.py)
+        sim_paths = monte_carlo_sim(start_price, n_days/252, 0.07, vol_calc, n_sims, n_days)
+        
+        # 3. Plotting the results
+        fig_mc = go.Figure()
+        for i in range(min(n_sims, 50)): # Plotting fewer lines for performance
+            fig_mc.add_trace(go.Scatter(y=sim_paths[:, i], mode='lines', 
+                                      line=dict(width=1), opacity=0.1, showlegend=False))
+        
+        st.plotly_chart(fig_mc, use_container_width=True)
+        
+        # Show statistical floor (VaR)
+        st.write(f"**95% Confidence Floor:** ₹{np.percentile(sim_paths[-1], 5):.2f}")
+    else:
+        st.error("No market data found to run simulation. Please check your ticker.")
 
-    # Simulation Chart with Quantile Shading
-    fig_mc = go.Figure()
-    x_axis = list(range(n_days))
-    fig_mc.add_trace(go.Scatter(y=np.percentile(sim_results, 95, axis=1), line=dict(width=0), name="95th Pctl"))
-    fig_mc.add_trace(go.Scatter(y=np.percentile(sim_results, 5, axis=1), fill='tonexty', line=dict(width=0), name="5th Pctl", fillcolor='rgba(0,176,246,0.2)'))
-    fig_mc.add_trace(go.Scatter(y=np.mean(sim_results, axis=1), line=dict(color='white', dash='dash'), name="Mean Path"))
-    
-    st.plotly_chart(fig_mc, use_container_width=True)
-    # ... (rest of your calculation code)
 
 
