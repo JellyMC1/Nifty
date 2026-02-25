@@ -81,4 +81,39 @@ if spot:
     fig.add_hline(y=0, line_dash="dash", line_color="white")
     st.plotly_chart(fig, use_container_width=True)
 else:
+
     st.warning("Trying to fetch market data... please refresh in a moment.")
+    # --- ADD THIS TO YOUR SIDEBAR ---
+st.sidebar.header("Strategy Builder")
+strategy = st.sidebar.selectbox("Select Strategy", ["Single Option", "Bull Call Spread", "Long Straddle"])
+
+if strategy == "Bull Call Spread":
+    st.info("Structure: Buy ATM Call, Sell OTM Call")
+    strike_long = st.number_input("Long Strike (Buy)", value=int(round(spot, -2)))
+    strike_short = st.number_input("Short Strike (Sell)", value=strike_long + 100)
+    
+    # Calculate both legs
+    c_p1, c_d1, _, _, c_t1 = bsm_calculation(spot, strike_long, T_years, r_rate, iv, "call")
+    c_p2, c_d2, _, _, c_t2 = bsm_calculation(spot, strike_short, T_years, r_rate, iv, "call")
+    
+    net_premium = c_p1 - c_p2
+    net_delta = c_d1 - c_d2
+    st.metric("Net Strategy Cost", f"₹{net_premium:.2f}")
+    st.write(f"Combined Delta: {net_delta:.3f} | Combined Theta: {c_t1 - c_t2:.2f}")
+    import pandas_ta as ta  # Add this to your requirements.txt
+
+# --- Technical Analysis Section ---
+st.subheader("📈 Nifty Technical Analysis")
+hist = yf.Ticker("^NSEI").history(period="1mo", interval="1d")
+
+# Calculate Indicators
+hist['SMA_20'] = ta.sma(hist['Close'], length=20)
+hist['RSI'] = ta.rsi(hist['Close'], length=14)
+
+# Plot with Plotly
+fig_ta = go.Figure()
+fig_ta.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='Market'))
+fig_ta.add_trace(go.Scatter(x=hist.index, y=hist['SMA_20'], name='20 SMA', line=dict(color='orange')))
+st.plotly_chart(fig_ta, use_container_width=True)
+
+st.write(f"**Current RSI:** {hist['RSI'].iloc[-1]:.2f}")
