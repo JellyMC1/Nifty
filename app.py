@@ -151,7 +151,7 @@ elif strategy == "Iron Condor":
 try:
     # We check if ce_price exists; if not, we calculate it right here
     try:
-    _ = spot
+     = spot
 except NameError:
     # Fallback: Get Nifty price if spot isn't defined yet
     temp_ticker = yf.Ticker("^NSEI")
@@ -260,6 +260,7 @@ new_price = black_scholes(new_spot, strike, T, 0.07, new_iv, "call")
 
 profit_change = (new_price - ce_price)
 st.info(f"If {symbol} moves {slide_price}% and IV shifts {slide_iv}%, your P&L changes by: **₹{profit_change:.2f} per unit**")
+
 
 
 
