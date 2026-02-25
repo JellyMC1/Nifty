@@ -1,119 +1,97 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 import yfinance as yf
-from scipy.stats import norm
+import pandas_ta as ta
 import plotly.graph_objects as go
+from scipy.stats import norm
 from datetime import datetime, timedelta
 import pytz
 
-# 1. Robust Price Fetcher
-def get_nifty_spot():
-    try:
-        ticker = yf.Ticker("^NSEI")
-        # Try fast info first
-        price = ticker.fast_info['last_price']
-        if price and price > 0:
-            return price
-        # Fallback to 1-day history if fast info fails
-        df = ticker.history(period="1d", interval="1m")
-        return df['Close'].iloc[-1]
-    except:
-        return None
+# --- CORE FUNCTIONS ---
+def get_data(symbol, period="1y", interval="1d"):
+    data = yf.download(symbol, period=period, interval=interval)
+    data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+    return data
 
-# 2. Black-Scholes Formula
-def bsm_calculation(S, K, T, r, sigma, option_type="call"):
+def bsm_price(S, K, T, r, sigma, option_type="call"):
     if T <= 0: T = 0.00001
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
     if option_type == "call":
-        price = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-        delta = norm.cdf(d1)
-    else:
-        price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-        delta = -norm.cdf(-d1)
-    
-    gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-    vega = (S * norm.pdf(d1) * np.sqrt(T)) / 100
-    theta = (-(S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * (norm.cdf(d2) if option_type=="call" else norm.cdf(-d2))) / 365
-    return price, delta, gamma, vega, theta
+        return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
-# 3. Streamlit Interface
-st.set_page_config(page_title="Nifty Live Greeks", layout="wide")
-st.title("🇮🇳 Nifty 50 Options Analysis Dashboard")
+# --- UI SETUP ---
+st.set_page_config(layout="wide", page_title="Ultimate Pro Terminal")
+st.title("🏛️ Institutional Trading Terminal (Nifty/BankNifty)")
 
-# Sidebar
-st.sidebar.header("User Inputs")
-iv = st.sidebar.slider("Volatility (IV %)", 5.0, 50.0, 15.0) / 100
-r_rate = st.sidebar.slider("Risk-Free Rate (%)", 0.0, 10.0, 6.5) / 100
+# --- SIDEBAR: ASSET & INDICATORS ---
+st.sidebar.header("🕹️ Global Controls")
+index_map = {"NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "FINNIFTY": "NIFTY_FIN_SERVICE.NS"}
+selected_index = st.sidebar.selectbox("Market Index", list(index_map.keys()))
 
-spot = get_nifty_spot()
+# The "All 150+" Indicator Engine
+st.sidebar.subheader("🔬 Technical Indicator Categories")
+# Get all indicators from pandas_ta
+all_indicators = pd.DataFrame().ta.indicators(as_list=True)
+category = st.sidebar.selectbox("Filter Category", ["All", "Momentum", "Overlap", "Trend", "Volatility", "Volume", "Statistics"])
 
-if spot:
-    st.metric("NIFTY 50 SPOT", f"₹{spot:.2f}")
-    
-    # Calculate Expiry (Next Thursday)
-    now = datetime.now(pytz.timezone('Asia/Kolkata'))
-    days_to_expiry = (3 - now.weekday()) % 7
-    expiry_dt = (now + timedelta(days=days_to_expiry)).replace(hour=15, minute=30)
-    T_years = max((expiry_dt - now).total_seconds() / (365 * 24 * 3600), 0.0001)
-
-    strike = st.number_input("Strike Price", value=int(round(spot, -2)), step=50)
-
-    # Compute Greeks
-    c_p, c_d, gamma, vega, c_t = bsm_calculation(spot, strike, T_years, r_rate, iv, "call")
-    p_p, p_d, _, _, p_t = bsm_calculation(spot, strike, T_years, r_rate, iv, "put")
-
-    # Display Metrics
-    col1, col2 = st.columns(2)
-    with col1:
-        st.success(f"**Call Option (CE)**\nPrice: ₹{c_p:.2f} | Delta: {c_d:.3f} | Theta: {c_t:.2f}")
-    with col2:
-        st.error(f"**Put Option (PE)**\nPrice: ₹{p_p:.2f} | Delta: {p_d:.3f} | Theta: {p_t:.2f}")
-
-    # Payoff Chart
-    st.subheader("Strategy Payoff (Projected)")
-    s_range = np.linspace(spot * 0.95, spot * 1.05, 100)
-    payoff_vals = [bsm_calculation(s, strike, T_years, r_rate, iv, "call")[0] - c_p for s in s_range]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=s_range, y=payoff_vals, name="Call Profit/Loss", line=dict(color='lime')))
-    fig.add_hline(y=0, line_dash="dash", line_color="white")
-    st.plotly_chart(fig, use_container_width=True)
+if category != "All":
+    # Filter indicators based on category keywords (simplified logic)
+    indicators_to_show = [i for i in all_indicators if category.lower() in i or category == "Overlap"] 
 else:
+    indicators_to_show = all_indicators
 
-    st.warning("Trying to fetch market data... please refresh in a moment.")
-    # --- ADD THIS TO YOUR SIDEBAR ---
-st.sidebar.header("Strategy Builder")
-strategy = st.sidebar.selectbox("Select Strategy", ["Single Option", "Bull Call Spread", "Long Straddle"])
+selected_ta = st.sidebar.multiselect("Select Indicators to Overlay", indicators_to_show, default=["sma", "rsi"])
 
-if strategy == "Bull Call Spread":
-    st.info("Structure: Buy ATM Call, Sell OTM Call")
-    strike_long = st.number_input("Long Strike (Buy)", value=int(round(spot, -2)))
-    strike_short = st.number_input("Short Strike (Sell)", value=strike_long + 100)
+# --- DATA FETCHING ---
+df = get_data(index_map[selected_index])
+spot = df['Close'].iloc[-1]
+
+# --- CHARTING ---
+st.subheader(f"📊 {selected_index} Live Analysis")
+fig = go.Figure()
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Candlestick"))
+
+# Dynamically apply any selected indicator
+for indicator in selected_ta:
+    try:
+        # Calls the function dynamically from pandas_ta
+        method = getattr(df.ta, indicator)
+        result = method()
+        if isinstance(result, pd.Series):
+            fig.add_trace(go.Scatter(x=df.index, y=result, name=indicator.upper()))
+        elif isinstance(result, pd.DataFrame):
+            for col in result.columns:
+                fig.add_trace(go.Scatter(x=df.index, y=result[col], name=col))
+    except Exception as e:
+        st.sidebar.warning(f"Could not load {indicator}: {e}")
+
+fig.update_layout(xaxis_rangeslider_visible=False, height=600, template="plotly_dark")
+st.plotly_chart(fig, use_container_width=True)
+
+# --- OPTION STRATEGY ENGINE ---
+st.divider()
+st.header("🛠️ Advanced Strategy Builder")
+col_opt1, col_opt2 = st.columns([1, 2])
+
+with col_opt1:
+    strategy = st.selectbox("Strategy Mode", ["Custom", "Iron Condor", "Straddle", "Bull Call Spread"])
+    iv = st.slider("Implied Volatility (IV%)", 5, 60, 15) / 100
+    expiry_days = st.number_input("Days to Expiry", 1, 30, 2)
+    T = expiry_days / 365
+
+with col_opt2:
+    st.write(f"**Current Spot:** ₹{spot:.2f}")
+    strike = st.number_input("Base Strike", value=int(round(spot, -2)), step=50)
     
-    # Calculate both legs
-    c_p1, c_d1, _, _, c_t1 = bsm_calculation(spot, strike_long, T_years, r_rate, iv, "call")
-    c_p2, c_d2, _, _, c_t2 = bsm_calculation(spot, strike_short, T_years, r_rate, iv, "call")
+    # Quick Calculation Table
+    ce_price = bsm_price(spot, strike, T, 0.07, iv, "call")
+    pe_price = bsm_price(spot, strike, T, 0.07, iv, "put")
     
-    net_premium = c_p1 - c_p2
-    net_delta = c_d1 - c_d2
-    st.metric("Net Strategy Cost", f"₹{net_premium:.2f}")
-    st.write(f"Combined Delta: {net_delta:.3f} | Combined Theta: {c_t1 - c_t2:.2f}")
-    import pandas_ta as ta  # Add this to your requirements.txt
-
-# --- Technical Analysis Section ---
-st.subheader("📈 Nifty Technical Analysis")
-hist = yf.Ticker("^NSEI").history(period="1mo", interval="1d")
-
-# Calculate Indicators
-hist['SMA_20'] = ta.sma(hist['Close'], length=20)
-hist['RSI'] = ta.rsi(hist['Close'], length=14)
-
-# Plot with Plotly
-fig_ta = go.Figure()
-fig_ta.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='Market'))
-fig_ta.add_trace(go.Scatter(x=hist.index, y=hist['SMA_20'], name='20 SMA', line=dict(color='orange')))
-st.plotly_chart(fig_ta, use_container_width=True)
-
-st.write(f"**Current RSI:** {hist['RSI'].iloc[-1]:.2f}")
+    st.table(pd.DataFrame({
+        "Option": ["Call (CE)", "Put (PE)"],
+        "Strike": [strike, strike],
+        "Theoretical Price": [f"₹{ce_price:.2f}", f"₹{pe_price:.2f}"]
+    }))
