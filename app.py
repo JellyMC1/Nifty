@@ -146,13 +146,13 @@ elif strategy == "Iron Condor":
     s1, s2, s3, s4 = strike-200, strike-100, strike+100, strike+200
     payoff = (np.maximum(sT-s1,0) - np.maximum(sT-s2,0) - np.maximum(s3-sT,0) + np.maximum(s4-sT,0))
     # --- ADD THIS SAFETY BLOCK ABOVE LINE 151 ---
-
-# This ensures the 'ce_price' variable is calculated before the payoff uses it
-try:
     # We check if ce_price exists; if not, we calculate it right here
-    try:
-     # Fixed Line 154
-if 'spot' not in locals():
+   try:
+    # This is indented 4 spaces (1 tab)
+    if 'spot' not in locals():
+        spot = data['Close'].iloc[-1]
+except:
+    spot = 22000 # Fallback price
     spot = data['Close'].iloc[-1] if not data.empty else 22000
 except NameError:
     # Fallback: Get Nifty price if spot isn't defined yet
@@ -270,6 +270,7 @@ try:
     st.metric("Live Feed Check", f"Active: {symbol}", f"Price: {current_val}")
 except Exception as e:
     st.info("Analytics will load once market data is fetched above.")
+
 
 
 
