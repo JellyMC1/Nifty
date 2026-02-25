@@ -155,22 +155,7 @@ except NameError: T = 7/365 # Default 1 week
 
 try: _ = iv
 except NameError: iv = 0.15 # Default 15% IV
-    _ = ce_price 
-except NameError:
-    # 0.07 is the risk-free rate (7%). Ensure 'spot', 'strike', 'T', and 'iv' exist above!
-    ce_price = black_scholes(spot, strike, T, 0.07, iv, "call")
-    pe_price = black_scholes(spot, strike, T, 0.07, iv, "put")
 
-# --- YOUR LINE 151 SHOULD NOW WORK ---
-
-else:
-    # DEFAULT/FALLBACK: Single Option (Call)
-    payoff = np.maximum(sT - strike, 0) - ce_price
-
-# --- STEP 3: Now the chart will always find the 'payoff' variable ---
-fig_payoff = go.Figure()
-fig_payoff.add_trace(go.Scatter(x=sT, y=payoff, name="P&L at Expiry", fill='tozeroy'))
-    
 with tab2:
     st.subheader("🎲 Institutional Risk Projection")
     
@@ -256,6 +241,7 @@ try:
     st.metric("Live Feed Check", f"Active: {symbol}", f"Price: {current_val}")
 except Exception as e:
     st.info("Analytics will load once market data is fetched above.")
+
 
 
 
