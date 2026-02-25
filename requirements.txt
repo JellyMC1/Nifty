@@ -5,3 +5,4 @@ plotly
 pandas
 pytz
 pandas_ta
+numpy
