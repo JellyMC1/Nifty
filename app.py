@@ -145,6 +145,18 @@ elif strategy == "Iron Condor":
     # Simplified Iron Condor Payoff
     s1, s2, s3, s4 = strike-200, strike-100, strike+100, strike+200
     payoff = (np.maximum(sT-s1,0) - np.maximum(sT-s2,0) - np.maximum(s3-sT,0) + np.maximum(s4-sT,0))
+    # --- ADD THIS SAFETY BLOCK ABOVE LINE 151 ---
+
+# This ensures the 'ce_price' variable is calculated before the payoff uses it
+try:
+    # We check if ce_price exists; if not, we calculate it right here
+    _ = ce_price 
+except NameError:
+    # 0.07 is the risk-free rate (7%). Ensure 'spot', 'strike', 'T', and 'iv' exist above!
+    ce_price = black_scholes(spot, strike, T, 0.07, iv, "call")
+    pe_price = black_scholes(spot, strike, T, 0.07, iv, "put")
+
+# --- YOUR LINE 151 SHOULD NOW WORK ---
 
 else:
     # DEFAULT/FALLBACK: Single Option (Call)
@@ -231,6 +243,7 @@ new_price = black_scholes(new_spot, strike, T, 0.07, new_iv, "call")
 
 profit_change = (new_price - ce_price)
 st.info(f"If {symbol} moves {slide_price}% and IV shifts {slide_iv}%, your P&L changes by: **₹{profit_change:.2f} per unit**")
+
 
 
 
