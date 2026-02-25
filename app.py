@@ -189,5 +189,49 @@ with tab2:
     else:
         st.error("No market data found to run simulation. Please check your ticker.")
 
+st.divider()
+st.header("🏢 Institutional Research & Greeks")
+
+# 1. Strategy Greeks Table
+st.subheader("📊 Position Greeks")
+col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+
+# Function to calculate Delta (for the table)
+def get_delta(S, K, T, r, sigma, type="call"):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    return norm.cdf(d1) if type == "call" else norm.cdf(d1) - 1
+
+delta_val = get_delta(spot, strike, T, 0.07, iv, "call")
+theta_val = -(spot * norm.pdf((np.log(spot/strike)+(0.07+0.5*iv**2)*T)/(iv*np.sqrt(T))) * iv) / (2 * np.sqrt(T))
+
+col_g1.metric("Net Delta", f"{delta_val:.3f}", help="Directional Risk")
+col_g2.metric("Net Theta", f"{theta_val/365:.2f}", help="Daily Time Decay")
+col_g3.metric("Max Profit", "Calculated at Expiry")
+col_g4.metric("Margin Required", "Approx ₹1.2L (Selling)")
+
+# 2. Global Macro News Feed
+st.sidebar.markdown("---")
+st.sidebar.subheader("📰 Global Market News")
+try:
+    news = ticker.news[:3] # Gets latest 3 news items from yfinance
+    for item in news:
+        st.sidebar.write(f"**{item['title']}**")
+        st.sidebar.caption(f"Source: {item['publisher']}")
+except:
+    st.sidebar.write("News feed temporarily unavailable.")
+
+# 3. Interactive Scenario "What-If" Analysis
+st.subheader("🧪 Stress Test: Price & Volatility Shift")
+slide_price = st.select_slider("Simulate Price Move (%)", options=[-10, -5, -2, 0, 2, 5, 10], value=0)
+slide_iv = st.select_slider("Simulate IV Spike (%)", options=[-5, 0, 5, 10, 20], value=0)
+
+new_spot = spot * (1 + slide_price/100)
+new_iv = iv + (slide_iv/100)
+new_price = black_scholes(new_spot, strike, T, 0.07, new_iv, "call")
+
+profit_change = (new_price - ce_price)
+st.info(f"If {symbol} moves {slide_price}% and IV shifts {slide_iv}%, your P&L changes by: **₹{profit_change:.2f} per unit**")
+
+
 
 
