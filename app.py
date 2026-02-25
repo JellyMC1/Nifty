@@ -97,3 +97,23 @@ with tab3:
     
     st.metric("Theoretical Call Price", f"₹{c_price:.2f}")
     st.metric("Theoretical Put Price", f"₹{p_price:.2f}")
+
+with tab3: # This is the BSM Options Lab tab
+    st.subheader("Black-Scholes Pricing & Strategy Lab")
+    
+    # This creates two columns INSIDE the tab
+    col_opt1, col_opt2 = st.columns(2)
+    
+    with col_opt1:
+        # THE DROPDOWN: Ensure it is indented here!
+        strategy = st.selectbox("Select Strategy Mode", 
+                                ["Single Option", "Long Straddle", "Bull Call Spread", "Iron Condor"])
+        
+        iv = st.slider("Implied Volatility (%)", 5, 60, 15) / 100
+        days_to_expiry = st.number_input("Days to Expiry", value=2)
+
+    with col_opt2:
+        # Strategy results will show here based on the dropdown choice
+        st.write(f"Analyzing: **{strategy}**")
+        # ... (rest of your calculation code)
+
