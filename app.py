@@ -147,8 +147,7 @@ elif strategy == "Iron Condor":
     payoff = (np.maximum(sT-s1,0) - np.maximum(sT-s2,0) - np.maximum(s3-sT,0) + np.maximum(s4-sT,0))
     # --- ADD THIS SAFETY BLOCK ABOVE LINE 151 ---
     # We check if ce_price exists; if not, we calculate it right here
-   try:
-    # This is indented 4 spaces (1 tab)
+    
     if 'spot' not in locals():
         spot = data['Close'].iloc[-1]
 except:
@@ -270,6 +269,7 @@ try:
     st.metric("Live Feed Check", f"Active: {symbol}", f"Price: {current_val}")
 except Exception as e:
     st.info("Analytics will load once market data is fetched above.")
+
 
 
 
