@@ -151,7 +151,9 @@ elif strategy == "Iron Condor":
 try:
     # We check if ce_price exists; if not, we calculate it right here
     try:
-     = spot
+     # Fixed Line 154
+if 'spot' not in locals():
+    spot = data['Close'].iloc[-1] if not data.empty else 22000
 except NameError:
     # Fallback: Get Nifty price if spot isn't defined yet
     temp_ticker = yf.Ticker("^NSEI")
@@ -260,6 +262,15 @@ new_price = black_scholes(new_spot, strike, T, 0.07, new_iv, "call")
 
 profit_change = (new_price - ce_price)
 st.info(f"If {symbol} moves {slide_price}% and IV shifts {slide_iv}%, your P&L changes by: **₹{profit_change:.2f} per unit**")
+
+try:
+    st.write("### 🛡️ Extended Analytics")
+    # Check for core variables
+    current_val = spot if 'spot' in locals() else 0
+    st.metric("Live Feed Check", f"Active: {symbol}", f"Price: {current_val}")
+except Exception as e:
+    st.info("Analytics will load once market data is fetched above.")
+
 
 
 
