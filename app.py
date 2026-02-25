@@ -115,5 +115,63 @@ with tab3: # This is the BSM Options Lab tab
     with col_opt2:
         # Strategy results will show here based on the dropdown choice
         st.write(f"Analyzing: **{strategy}**")
-        # ... (rest of your calculation code)
+        # --- ADVANCED UI OVERLAY ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🌐 Global Market Pulse")
+# Quick health check for US markets to see 'sentiment'
+us_market = yf.Ticker("^GSPC").history(period="1d")
+change = ((us_market['Close'].iloc[-1] - us_market['Open'].iloc[-1]) / us_market['Open'].iloc[-1]) * 100
+st.sidebar.metric("S&P 500 (US)", f"{us_market['Close'].iloc[-1]:.2f}", f"{change:.2f}%")
+
+# Simulation Precision Setting
+precision = st.sidebar.select_slider("Simulation Rigor", options=["Standard", "High", "Institutional"], value="Standard")
+iterations = {"Standard": 1000, "High": 5000, "Institutional": 10000}[precision]
+
+with tab3:
+    st.subheader("📊 Strategy Payoff Simulator")
+    
+    # Create a range of prices for the payoff chart
+    sT = np.linspace(strike * 0.8, strike * 1.2, 100)
+    
+    if strategy == "Long Straddle":
+        payoff = np.maximum(sT - strike, 0) + np.maximum(strike - sT, 0) - (ce_price + pe_price)
+    elif strategy == "Bull Call Spread":
+        payoff = np.maximum(sT - strike, 0) - np.maximum(sT - (strike + 100), 0) - (ce_price - 10) # 10 is dummy hedge cost
+        
+    fig_payoff = go.Figure()
+    fig_payoff.add_trace(go.Scatter(x=sT, y=payoff, name="P&L at Expiry", fill='tozeroy'))
+    fig_payoff.add_hline(y=0, line_dash="dash", line_color="red")
+    fig_payoff.update_layout(title="Expected Profit/Loss Profile", xaxis_title="Spot Price at Expiry", yaxis_title="Profit / Loss")
+    st.plotly_chart(fig_payoff, use_container_width=True)
+    
+with tab2:
+    st.subheader("🎲 Institutional Risk Projection")
+    
+    # Advanced Monte Carlo with Confidence Intervals
+    returns = np.log(data['Close'] / data['Close'].shift(1))
+    mu, sigma_daily = returns.mean(), returns.std()
+    
+    # Run Simulation
+    sim_results = monte_carlo_sim(data['Close'].iloc[-1], n_days/252, 0.07, vol, iterations, n_days)
+    
+    # UI: Metrics for Risk
+    final_prices = sim_results[-1]
+    var_95 = np.percentile(final_prices, 5)
+    expected_val = np.mean(final_prices)
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("95% VaR (Floor)", f"₹{var_95:.2f}", help="95% certainty price won't fall below this")
+    col2.metric("Mean Projection", f"₹{expected_val:.2f}")
+    col3.metric("Volatility (σ)", f"{vol*100:.1f}%")
+
+    # Simulation Chart with Quantile Shading
+    fig_mc = go.Figure()
+    x_axis = list(range(n_days))
+    fig_mc.add_trace(go.Scatter(y=np.percentile(sim_results, 95, axis=1), line=dict(width=0), name="95th Pctl"))
+    fig_mc.add_trace(go.Scatter(y=np.percentile(sim_results, 5, axis=1), fill='tonexty', line=dict(width=0), name="5th Pctl", fillcolor='rgba(0,176,246,0.2)'))
+    fig_mc.add_trace(go.Scatter(y=np.mean(sim_results, axis=1), line=dict(color='white', dash='dash'), name="Mean Path"))
+    
+    st.plotly_chart(fig_mc, use_container_width=True)
+    # ... (rest of your calculation code)
+
 
