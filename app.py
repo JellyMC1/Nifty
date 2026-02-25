@@ -5,93 +5,95 @@ import yfinance as yf
 import pandas_ta as ta
 import plotly.graph_objects as go
 from scipy.stats import norm
-from datetime import datetime, timedelta
-import pytz
 
-# --- CORE FUNCTIONS ---
-def get_data(symbol, period="1y", interval="1d"):
-    data = yf.download(symbol, period=period, interval=interval)
-    data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
-    return data
-
-def bsm_price(S, K, T, r, sigma, option_type="call"):
-    if T <= 0: T = 0.00001
+# --- 1. QUANT MODELS ---
+def black_scholes(S, K, T, r, sigma, type="call"):
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
-    if option_type == "call":
+    if type == "call":
         return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
     return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
-# --- UI SETUP ---
-st.set_page_config(layout="wide", page_title="Ultimate Pro Terminal")
-st.title("🏛️ Institutional Trading Terminal (Nifty/BankNifty)")
+def monte_carlo_sim(S, T, r, sigma, iterations=1000, days=30):
+    dt = 1/252
+    paths = np.zeros((days, iterations))
+    paths[0] = S
+    for t in range(1, days):
+        z = np.random.standard_normal(iterations)
+        paths[t] = paths[t-1] * np.exp((r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z)
+    return paths
 
-# --- SIDEBAR: ASSET & INDICATORS ---
-st.sidebar.header("🕹️ Global Controls")
-index_map = {"NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "FINNIFTY": "NIFTY_FIN_SERVICE.NS"}
-selected_index = st.sidebar.selectbox("Market Index", list(index_map.keys()))
+# --- 2. TERMINAL UI ---
+st.set_page_config(layout="wide", page_title="Institutional Terminal")
+st.title("🏛️ Global Alpha Terminal")
 
-# The "All 150+" Indicator Engine
-st.sidebar.subheader("🔬 Technical Indicator Categories")
-# Get all indicators from pandas_ta
-all_indicators = pd.DataFrame().ta.indicators(as_list=True)
-category = st.sidebar.selectbox("Filter Category", ["All", "Momentum", "Overlap", "Trend", "Volatility", "Volume", "Statistics"])
+# Sidebar - Asset Selection
+st.sidebar.header("🌍 Market Selection")
+market_type = st.sidebar.radio("Market", ["Indian Indices", "Global Indices"])
 
-if category != "All":
-    # Filter indicators based on category keywords (simplified logic)
-    indicators_to_show = [i for i in all_indicators if category.lower() in i or category == "Overlap"] 
-else:
-    indicators_to_show = all_indicators
+indices = {
+    "Indian Indices": {"NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "SENSEX": "^BSESN"},
+    "Global Indices": {"S&P 500": "^GSPC", "NASDAQ": "^IXIC", "DAX": "^GDAXI", "NIKKEI 225": "^N225"}
+}
 
-selected_ta = st.sidebar.multiselect("Select Indicators to Overlay", indicators_to_show, default=["sma", "rsi"])
+symbol = st.sidebar.selectbox("Select Asset", list(indices[market_type].keys()))
+ticker = indices[market_type][symbol]
 
-# --- DATA FETCHING ---
-df = get_data(index_map[selected_index])
-spot = df['Close'].iloc[-1]
+# --- 3. DASHBOARD TABS ---
+tab1, tab2, tab3 = st.tabs(["📈 Technical Charts", "🎲 Monte Carlo Simulation", "🧮 BSM Options Lab"])
 
-# --- CHARTING ---
-st.subheader(f"📊 {selected_index} Live Analysis")
-fig = go.Figure()
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Candlestick"))
+data = yf.download(ticker, period="1y")
+# Clean multi-index columns if they exist
+if isinstance(data.columns, pd.MultiIndex):
+    data.columns = data.columns.get_level_values(0)
 
-# Dynamically apply any selected indicator
-for indicator in selected_ta:
-    try:
-        # Calls the function dynamically from pandas_ta
-        method = getattr(df.ta, indicator)
-        result = method()
-        if isinstance(result, pd.Series):
-            fig.add_trace(go.Scatter(x=df.index, y=result, name=indicator.upper()))
-        elif isinstance(result, pd.DataFrame):
-            for col in result.columns:
-                fig.add_trace(go.Scatter(x=df.index, y=result[col], name=col))
-    except Exception as e:
-        st.sidebar.warning(f"Could not load {indicator}: {e}")
-
-fig.update_layout(xaxis_rangeslider_visible=False, height=600, template="plotly_dark")
-st.plotly_chart(fig, use_container_width=True)
-
-# --- OPTION STRATEGY ENGINE ---
-st.divider()
-st.header("🛠️ Advanced Strategy Builder")
-col_opt1, col_opt2 = st.columns([1, 2])
-
-with col_opt1:
-    strategy = st.selectbox("Strategy Mode", ["Custom", "Iron Condor", "Straddle", "Bull Call Spread"])
-    iv = st.slider("Implied Volatility (IV%)", 5, 60, 15) / 100
-    expiry_days = st.number_input("Days to Expiry", 1, 30, 2)
-    T = expiry_days / 365
-
-with col_opt2:
-    st.write(f"**Current Spot:** ₹{spot:.2f}")
-    strike = st.number_input("Base Strike", value=int(round(spot, -2)), step=50)
+with tab1:
+    st.subheader(f"{symbol} Advanced Charting")
+    # All 150+ Indicators via multiselect
+    all_indicators = [m for m in dir(pd.DataFrame().ta) if not m.startswith("_")]
+    selected_ta = st.multiselect("Add Indicators", all_indicators, default=["sma", "rsi", "bbands"])
     
-    # Quick Calculation Table
-    ce_price = bsm_price(spot, strike, T, 0.07, iv, "call")
-    pe_price = bsm_price(spot, strike, T, 0.07, iv, "put")
+    fig = go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Market")])
+    for ind in selected_ta:
+        try:
+            res = getattr(data.ta, ind)()
+            if isinstance(res, pd.DataFrame):
+                for col in res.columns:
+                    fig.add_trace(go.Scatter(x=data.index, y=res[col], name=col))
+            else:
+                fig.add_trace(go.Scatter(x=data.index, y=res, name=ind))
+        except: pass
+    st.plotly_chart(fig, use_container_width=True)
+
+with tab2:
+    st.subheader("Future Price Projection (Monte Carlo)")
+    n_sims = st.slider("Number of Simulations", 100, 5000, 1000)
+    n_days = st.slider("Days into Future", 5, 252, 30)
     
-    st.table(pd.DataFrame({
-        "Option": ["Call (CE)", "Put (PE)"],
-        "Strike": [strike, strike],
-        "Theoretical Price": [f"₹{ce_price:.2f}", f"₹{pe_price:.2f}"]
-    }))
+    # Calculate daily volatility for the simulation
+    returns = np.log(data['Close'] / data['Close'].shift(1))
+    vol = returns.std() * np.sqrt(252)
+    
+    sim_paths = monte_carlo_sim(data['Close'].iloc[-1], n_days/252, 0.07, vol, n_sims, n_days)
+    
+    fig_sim = go.Figure()
+    for i in range(min(n_sims, 100)): # Plot first 100 for performance
+        fig_sim.add_trace(go.Scatter(y=sim_paths[:, i], mode='lines', line=dict(width=1), opacity=0.1, showlegend=False))
+    st.plotly_chart(fig_sim, use_container_width=True)
+    st.write(f"**Expected Range in {n_days} days:** ₹{np.percentile(sim_paths[-1], 5):.2f} - ₹{np.percentile(sim_paths[-1], 95):.2f}")
+
+with tab3:
+    st.subheader("Black-Scholes Pricing Model")
+    col1, col2 = st.columns(2)
+    with col1:
+        strike = st.number_input("Strike Price", value=float(round(data['Close'].iloc[-1], -2)))
+        expiry = st.slider("Days to Expiry", 1, 365, 30)
+    with col2:
+        risk_free = st.number_input("Risk Free Rate (%)", value=7.0) / 100
+        vol_input = st.slider("Implied Volatility (%)", 5, 100, int(vol*100)) / 100
+    
+    c_price = black_scholes(data['Close'].iloc[-1], strike, expiry/365, risk_free, vol_input, "call")
+    p_price = black_scholes(data['Close'].iloc[-1], strike, expiry/365, risk_free, vol_input, "put")
+    
+    st.metric("Theoretical Call Price", f"₹{c_price:.2f}")
+    st.metric("Theoretical Put Price", f"₹{p_price:.2f}")
