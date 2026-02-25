@@ -150,6 +150,23 @@ elif strategy == "Iron Condor":
 # This ensures the 'ce_price' variable is calculated before the payoff uses it
 try:
     # We check if ce_price exists; if not, we calculate it right here
+    try:
+    _ = spot
+except NameError:
+    # Fallback: Get Nifty price if spot isn't defined yet
+    temp_ticker = yf.Ticker("^NSEI")
+    temp_hist = temp_ticker.history(period="1d")
+    spot = temp_hist['Close'].iloc[-1]
+
+# Ensure 'strike', 'T', and 'iv' also have fallback values
+try: _ = strike
+except NameError: strike = int(round(spot, -2))
+
+try: _ = T
+except NameError: T = 7/365 # Default 1 week
+
+try: _ = iv
+except NameError: iv = 0.15 # Default 15% IV
     _ = ce_price 
 except NameError:
     # 0.07 is the risk-free rate (7%). Ensure 'spot', 'strike', 'T', and 'iv' exist above!
@@ -243,6 +260,7 @@ new_price = black_scholes(new_spot, strike, T, 0.07, new_iv, "call")
 
 profit_change = (new_price - ce_price)
 st.info(f"If {symbol} moves {slide_price}% and IV shifts {slide_iv}%, your P&L changes by: **₹{profit_change:.2f} per unit**")
+
 
 
 
